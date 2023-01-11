@@ -1,0 +1,43 @@
+{
+    resource=/lambda/{id},
+    path=/lambda/1234,
+    httpMethod=GET,
+    headers={Accept=*/*, Accept-Encoding=gzip, ... X-Forwarded-Port=443, X-Forwarded-Proto=https},
+    multiValueHeaders={Accept=[*/*], Accept-Encoding=[gzip, deflate, br], ... X-Forwarded-Port=[443], X-Forwarded-Proto=[https]},
+    queryStringParameters=null,
+    multiValueQueryStringParameters=null,
+    pathParameters={id=Test},
+    stageVariables=null,
+    requestContext={
+        resourceId=b12345,
+        resourcePath=/lambda/{id},
+        httpMethod=GET,
+        extendedRequestId=xx,
+        requestTime=11/Jan/2023:23:16:46 +0000,
+        path=/prod/lambda/1234,
+        accountId=api-account-id,
+        protocol=HTTP/1.1,
+        stage=prod,
+        domainPrefix=agdvz81do2,
+        requestTimeEpoch=1673479006426,
+        requestId=94c33cc5-0391-42ba-9679-bcd9e65f5d68,
+        identity={
+            cognitoIdentityPoolId=null,
+            accountId=calling-account-id,
+            cognitoIdentityId=null,
+            caller=ABCDEF123,
+            sourceIp=1.1.1.1,
+            principalOrgId=o-xxxxx,
+            accessKey=XYZ123,
+            cognitoAuthenticationType=null,
+            cognitoAuthenticationProvider=null,
+            userArn=arn:aws:iam::calling-account-id:user/calling-user-id,
+            userAgent=PostmanRuntime/7.30.0,
+            user=FDHFDH123
+        },
+        domainName=agdvz81do2.execute-api.eu-central-1.amazonaws.com,
+        apiId=agdvz81do2
+    },
+    body=null,
+    isBase64Encoded=false
+}

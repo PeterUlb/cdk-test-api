@@ -1,5 +1,12 @@
 package io.ulbrich;
 
+import com.amazonaws.services.lambda.runtime.Context;
+import com.amazonaws.services.lambda.runtime.LambdaLogger;
+import com.amazonaws.services.lambda.runtime.RequestHandler;
+import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent;
+import software.amazon.lambda.powertools.metrics.Metrics;
+import software.amazon.lambda.powertools.tracing.Tracing;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -8,23 +15,57 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import com.amazonaws.services.lambda.runtime.Context;
-import com.amazonaws.services.lambda.runtime.RequestHandler;
-import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyRequestEvent;
-import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent;
-import software.amazon.lambda.powertools.metrics.Metrics;
-import software.amazon.lambda.powertools.tracing.Tracing;
-
 import static software.amazon.lambda.powertools.tracing.CaptureMode.DISABLED;
 
 /**
  * Handler for requests to Lambda function.
+ * The input is either APIGatewayProxyRequestEvent (API GW call)
+ * or Map<String,Object> (StepFunctions call)
+ * <p>
+ * Note regarding IAM Authentication
+ * <p>
+ * Lambda directly:
+ * <ul>
+ *   <li>available by default with LAMBDA_PROXY integration</li>
+ *   <li>identify caller: requestContext={identity={accountId=some-account, userArn=arn:aws:iam::some-account:user/some-user}}</li>
+ *   <ul>
+ *       <li>if RequestHandler&lt;APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent&gt; is used: input.getRequestContext().getIdentity().getUserArn();</li>
+ *       <li>if RequestHandler&lt;Map&lt;String, Object&gt, APIGatewayProxyResponseEvent&gt; is used: manual lookup</li>
+ *   </ul>
+ * </ul>
+ * StepFunction directly:
+ * <ul>
+ *   <li>requires CDK integration setting requestContext with userArn + accountId to generate respective mapping template (StepFunctionsExecutionIntegrationOptions)</li>
+ *   <li>identify caller: requestContext={accountId=some-account, userArn=arn:aws:iam::some-account:user/some-user}</li>
+ *   <ul><li>available manually in RequestHandler&lt;Map&lt;String, Object&gt, APIGatewayProxyResponseEvent&gt; event</li></ul>
+ *   <li>Note: it would also be possible to get the attribute in "identity" similar to the lambda integration. But CDK decided to drop the identity envelope</li>
+ * </ul>
+ * <pre>{@code
+ * #if ($includeIdentity)
+ *     #set($inputString = "$inputString, @@identity@@:{")
+ *     #foreach($paramName in $context.identity.keySet())
+ *         #set($inputString = "$inputString @@$paramName@@: @@$util.escapeJavaScript($context.identity.get($paramName))@@")
+ *         #if($foreach.hasNext)
+ *             #set($inputString = "$inputString,")
+ *         #end
+ *     #end
+ * #set($inputString = "$inputString }")
+ * #end
+ * }</pre>
+ * See <a href="https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-mapping-template-reference.html#context-variable-reference">Mapping template reference</a>
+ * <ul>
+ *  <li>$context.identity.accountId</li>
+ *  <li>$context.identity.userArn</li>
+ * </ul>
  */
-public class App implements RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> {
+public class App implements RequestHandler<Map<String, Object>, APIGatewayProxyResponseEvent> {
 
     @Tracing(captureMode = DISABLED)
     @Metrics(captureColdStart = true)
-    public APIGatewayProxyResponseEvent handleRequest(final APIGatewayProxyRequestEvent input, final Context context) {
+    public APIGatewayProxyResponseEvent handleRequest(final Map<String, Object> input, final Context context) {
+        LambdaLogger logger = context.getLogger();
+        logger.log("****INPUT***");
+        logger.log(input.toString());
         Map<String, String> headers = new HashMap<>();
         headers.put("Content-Type", "application/json");
         headers.put("X-Custom-Header", "application/json");

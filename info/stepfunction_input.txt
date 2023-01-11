@@ -1,0 +1,27 @@
+{
+    body={},
+    header={Accept=*/*, Accept-Encoding=gzip, ... X-Forwarded-Port=443, X-Forwarded-Proto=https},
+    querystring={},
+    path={id=1234}
+    authorizer={},
+    requestContext={
+        accountId=calling-account-id,
+        apiId=agdvz81do2,
+        apiKey=,
+        authorizerPrincipalId=,
+        caller=AIDAY123456789,
+        cognitoAuthenticationProvider=,
+        cognitoAuthenticationType=,
+        cognitoIdentityId=,
+        cognitoIdentityPoolId=,
+        httpMethod=GET,
+        stage=prod,
+        sourceIp=1.1.1.1,
+        user=FDHFDH123,
+        userAgent=PostmanRuntime/7.30.0,
+        userArn=arn:aws:iam::calling-account-id:user/calling-user-id,
+        requestId=161c8c0f-ef4e-40fe-ac07-a7b1b6e14cfe,
+        resourceId=b12345,
+        resourcePath=/sfn/{id}
+    }
+}

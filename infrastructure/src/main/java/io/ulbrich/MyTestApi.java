@@ -4,17 +4,17 @@ import software.amazon.awscdk.BundlingOptions;
 import software.amazon.awscdk.DockerVolume;
 import software.amazon.awscdk.Duration;
 import software.amazon.awscdk.services.apigateway.*;
+import software.amazon.awscdk.services.lambda.Code;
+import software.amazon.awscdk.services.lambda.Function;
 import software.amazon.awscdk.services.lambda.FunctionProps;
+import software.amazon.awscdk.services.lambda.Runtime;
 import software.amazon.awscdk.services.logs.RetentionDays;
+import software.amazon.awscdk.services.s3.Bucket;
 import software.amazon.awscdk.services.s3.assets.AssetOptions;
 import software.amazon.awscdk.services.stepfunctions.StateMachine;
 import software.amazon.awscdk.services.stepfunctions.StateMachineType;
 import software.amazon.awscdk.services.stepfunctions.tasks.LambdaInvoke;
 import software.constructs.Construct;
-import software.amazon.awscdk.services.lambda.Code;
-import software.amazon.awscdk.services.lambda.Function;
-import software.amazon.awscdk.services.lambda.Runtime;
-import software.amazon.awscdk.services.s3.Bucket;
 
 import java.util.Arrays;
 import java.util.List;
@@ -74,12 +74,15 @@ public class MyTestApi extends Construct {
                 .restApiName("My Api").description("Playground API.")
                 .build();
 
-        Resource widget = api.getRoot().addResource("{id}");
-        LambdaIntegration functionOneIntegration = new LambdaIntegration(functionOne);
-        widget.addMethod("POST", functionOneIntegration);
-        widget.addMethod("GET", functionOneIntegration);
-        widget.addMethod("DELETE", functionOneIntegration);
+        Resource lambdaResource = api.getRoot().addResource("lambda");
+        Resource lambdaIdResource = lambdaResource.addResource("{id}");
+        LambdaIntegration functionOneIntegration = LambdaIntegration.Builder.create(functionOne).build();
+        lambdaIdResource.addMethod("POST", functionOneIntegration);
+        lambdaIdResource.addMethod("GET", functionOneIntegration);
+        lambdaIdResource.addMethod("DELETE", functionOneIntegration);
 
+        Resource sfnResource = api.getRoot().addResource("sfn");
+        Resource sfnIdResource = sfnResource.addResource("{id}");
 
         // StateMachine Testing
         StateMachine stateMachine = StateMachine.Builder.create(this, "MyStateMachine")
@@ -88,6 +91,35 @@ public class MyTestApi extends Construct {
                         .lambdaFunction(functionOne)
                         .build())
                 .build();
-        api.getRoot().addMethod("GET", StepFunctionsIntegration.startExecution(stateMachine));
+        sfnIdResource.addMethod("GET",
+                StepFunctionsIntegration.startExecution(stateMachine, StepFunctionsExecutionIntegrationOptions.builder()
+                        .authorizer(true)
+                        .headers(true)
+                        .path(true)
+                        .querystring(true)
+                        .requestContext(RequestContext.builder()
+                                // NOTE: This corresponds to requestContext>identity>accountID, not requestContext>accountId in LAMBDA_PROXY
+                                // So it is the account id calling the API, not the api owner
+                                .accountId(true)
+                                .apiId(true)
+                                .apiKey(true)
+                                .authorizerPrincipalId(true)
+                                .caller(true)
+                                .cognitoAuthenticationProvider(true)
+                                .cognitoAuthenticationType(true)
+                                .cognitoIdentityId(true)
+                                .cognitoIdentityPoolId(true)
+                                .httpMethod(true)
+                                .requestId(true)
+                                .resourceId(true)
+                                .resourcePath(true)
+                                .sourceIp(true)
+                                .stage(true)
+                                .userArn(true)
+                                .user(true)
+                                .userAgent(true)
+                                .build())
+                        .build())
+        );
     }
 }

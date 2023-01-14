@@ -2,10 +2,10 @@
     xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <groupId>io.ulbrich</groupId>
-    <artifactId>function-one</artifactId>
+    <artifactId>foo-list</artifactId>
     <version>1.0</version>
     <packaging>jar</packaging>
-    <name>Function one</name>
+    <name>List Foo</name>
     <properties>
         <maven.compiler.source>11</maven.compiler.source>
         <maven.compiler.target>11</maven.compiler.target>
@@ -89,7 +89,7 @@
               <version>3.4.0</version>
               <configuration>
                   <createDependencyReducedPom>false</createDependencyReducedPom>
-                  <finalName>functionone</finalName>
+                  <finalName>${project.artifactId}</finalName>
               </configuration>
               <executions>
                   <execution>

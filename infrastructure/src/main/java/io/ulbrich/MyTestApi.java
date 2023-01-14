@@ -6,91 +6,80 @@ import software.amazon.awscdk.Duration;
 import software.amazon.awscdk.services.apigateway.*;
 import software.amazon.awscdk.services.lambda.Code;
 import software.amazon.awscdk.services.lambda.Function;
-import software.amazon.awscdk.services.lambda.FunctionProps;
 import software.amazon.awscdk.services.lambda.Runtime;
 import software.amazon.awscdk.services.logs.RetentionDays;
 import software.amazon.awscdk.services.s3.Bucket;
 import software.amazon.awscdk.services.s3.assets.AssetOptions;
+import software.amazon.awscdk.services.ssm.StringParameter;
+import software.amazon.awscdk.services.stepfunctions.Parallel;
 import software.amazon.awscdk.services.stepfunctions.StateMachine;
 import software.amazon.awscdk.services.stepfunctions.StateMachineType;
+import software.amazon.awscdk.services.stepfunctions.Succeed;
 import software.amazon.awscdk.services.stepfunctions.tasks.LambdaInvoke;
 import software.constructs.Construct;
 
-import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 import static java.util.Collections.singletonList;
 import static software.amazon.awscdk.BundlingOutput.ARCHIVED;
 
 public class MyTestApi extends Construct {
-
     public MyTestApi(Construct scope, String id) {
         super(scope, id);
 
-
-        List<String> functionOnePackagingInstructions = Arrays.asList(
-                "/bin/sh",
-                "-c",
-                "cd FunctionOne " +
-                        "&& mvn clean install " +
-                        "&& cp /asset-input/FunctionOne/target/functionone.jar /asset-output/"
-        );
-
-        BundlingOptions.Builder builderOptions = BundlingOptions.builder()
-                .command(functionOnePackagingInstructions)
-                .image(Runtime.JAVA_11.getBundlingImage())
-                .volumes(singletonList(
-                        // Mount local .m2 repo to avoid download all the dependencies again inside the container
-                        DockerVolume.builder()
-                                .hostPath(System.getProperty("user.home") + "/.m2/")
-                                .containerPath("/root/.m2/")
-                                .build()
-                ))
-                .user("root")
-                .outputType(ARCHIVED);
-
         Bucket someBucket = new Bucket(this, "SomeBucket");
+        StringParameter someBucketParam = StringParameter.Builder.create(this, "SomeBucketParameter")
+                .parameterName("/test/bucket/arn")
+                .description("ARN of Bucket")
+                .stringValue(someBucket.getBucketArn())
+                .build();
 
-        Function functionOne = new Function(this, "FunctionOne", FunctionProps.builder()
-                .runtime(Runtime.JAVA_11)
-                .code(Code.fromAsset("../software/", AssetOptions.builder()
-                        .bundling(builderOptions
-                                .command(functionOnePackagingInstructions)
+        Function fooList = createJavaFunction("FooListFunction", "FooList", "foo-list.jar", "io.ulbrich.App", Map.of(
+                "BUCKET", someBucket.getBucketName(),
+                "BUCKET_PARAM", someBucketParam.getParameterName()));
+        Function barList = createJavaFunction("BarListFunction", "BarList", "bar-list.jar", "io.ulbrich.App", Map.of(
+                "BUCKET", someBucket.getBucketName(),
+                "BUCKET_PARAM", someBucketParam.getParameterName()));
+
+        StateMachine stateMachine = StateMachine.Builder.create(this, "MyStateMachine")
+                .stateMachineType(StateMachineType.EXPRESS)
+                .definition(Parallel.Builder.create(this, "Fetch All")
+                        .build()
+                        .branch(LambdaInvoke.Builder.create(this, "FetchFoo")
+                                .lambdaFunction(fooList)
                                 .build())
-                        .build()))
-                .handler("io.ulbrich.App")
-                .environment(java.util.Map.of(   // Java 9 or later
-                        "BUCKET", someBucket.getBucketName()))
-                .memorySize(1024)
-                .timeout(Duration.seconds(10))
-                .logRetention(RetentionDays.ONE_WEEK)
-                .build());
+                        .branch(LambdaInvoke.Builder.create(this, "FetchBar")
+                                .lambdaFunction(barList)
+                                .build())
+                        .branch(LambdaInvoke.Builder.create(this, "FetchFoo2")
+                                .lambdaFunction(fooList)
+                                .build())
+                        .next(Succeed.Builder.create(this, "Finished").build()))
+                .build();
 
 
-        someBucket.grantReadWrite(functionOne);
+        Function listCoordinator = createJavaFunction("ListCoordinatorFunction", "ListCoordinator", "list-coordinator.jar", "io.ulbrich.App", Map.of(
+                "SM_LIST_ARN", stateMachine.getStateMachineArn()));
+        stateMachine.grantStartSyncExecution(listCoordinator);
+
+        someBucket.grantReadWrite(fooList);
+        someBucket.grantRead(barList);
 
         RestApi api = RestApi.Builder.create(this, "My-API")
                 .defaultCorsPreflightOptions(CorsOptions.builder().allowOrigins(Cors.ALL_ORIGINS).build())
                 .restApiName("My Api").description("Playground API.")
+                .defaultMethodOptions(MethodOptions.builder().authorizationType(AuthorizationType.IAM).build())
                 .build();
 
-        Resource lambdaResource = api.getRoot().addResource("lambda");
-        Resource lambdaIdResource = lambdaResource.addResource("{id}");
-        LambdaIntegration functionOneIntegration = LambdaIntegration.Builder.create(functionOne).build();
-        lambdaIdResource.addMethod("POST", functionOneIntegration);
-        lambdaIdResource.addMethod("GET", functionOneIntegration);
-        lambdaIdResource.addMethod("DELETE", functionOneIntegration);
+        api.getRoot()
+                .addResource("lambda")
+                .addResource("{id}")
+                .addMethod("GET", LambdaIntegration.Builder.create(listCoordinator).build());
 
         Resource sfnResource = api.getRoot().addResource("sfn");
         Resource sfnIdResource = sfnResource.addResource("{id}");
 
-        // StateMachine Testing
-        StateMachine stateMachine = StateMachine.Builder.create(this, "MyStateMachine")
-                .stateMachineType(StateMachineType.EXPRESS)
-                .definition(LambdaInvoke.Builder.create(this, "MyLambdaTask")
-                        .lambdaFunction(functionOne)
-                        .build())
-                .build();
         sfnIdResource.addMethod("GET",
                 StepFunctionsIntegration.startExecution(stateMachine, StepFunctionsExecutionIntegrationOptions.builder()
                         .authorizer(true)
@@ -121,5 +110,43 @@ public class MyTestApi extends Construct {
                                 .build())
                         .build())
         );
+    }
+
+    private Function createJavaFunction(String functionId, String directory, String jarName, String handlerMethod, Map<String, String> environment) { // TODO: Builder
+        if (!jarName.endsWith(".jar")) {
+            jarName += ".jar";
+        }
+        List<String> commands = List.of(
+                "/bin/sh",
+                "-c",
+                String.format("cd %1$s && mvn clean install && cp /asset-input/%1$s/target/%2$s /asset-output/", directory, jarName)
+        );
+
+        BundlingOptions.Builder bundlingOptions = BundlingOptions.builder()
+                .command(commands)
+                .image(Runtime.JAVA_11.getBundlingImage())
+                .volumes(singletonList(
+                        // Mount local .m2 repo to avoid download all the dependencies again inside the container
+                        DockerVolume.builder()
+                                .hostPath(System.getProperty("user.home") + "/.m2/")
+                                .containerPath("/root/.m2/")
+                                .build()
+                ))
+                .user("root")
+                .outputType(ARCHIVED);
+
+        return Function.Builder.create(this, functionId)
+                .runtime(Runtime.JAVA_11)
+                .code(Code.fromAsset("../software/", AssetOptions.builder()
+                        .bundling(bundlingOptions
+                                .command(commands)
+                                .build())
+                        .build()))
+                .handler(handlerMethod)
+                .environment(environment)
+                .memorySize(1024)
+                .timeout(Duration.seconds(10))
+                .logRetention(RetentionDays.ONE_WEEK)
+                .build();
     }
 }

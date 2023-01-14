@@ -3,6 +3,9 @@ package io.ulbrich;
 import software.amazon.awscdk.App;
 import software.amazon.awscdk.StackProps;
 
+/**
+ * Note: use {@code export CDK_DOCKER=finch} for mac if required
+ */
 public class MyTestApiApp {
     public static void main(final String[] args) {
         App app = new App();

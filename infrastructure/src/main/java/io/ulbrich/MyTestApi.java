@@ -4,8 +4,7 @@ import software.amazon.awscdk.BundlingOptions;
 import software.amazon.awscdk.DockerVolume;
 import software.amazon.awscdk.Duration;
 import software.amazon.awscdk.services.apigateway.*;
-import software.amazon.awscdk.services.lambda.Code;
-import software.amazon.awscdk.services.lambda.Function;
+import software.amazon.awscdk.services.lambda.*;
 import software.amazon.awscdk.services.lambda.Runtime;
 import software.amazon.awscdk.services.logs.RetentionDays;
 import software.amazon.awscdk.services.s3.Bucket;
@@ -35,12 +34,12 @@ public class MyTestApi extends Construct {
                 .stringValue(someBucket.getBucketArn())
                 .build();
 
-        Function fooList = createJavaFunction("FooListFunction", "FooList", "foo-list.jar", "io.ulbrich.App", Map.of(
+        Version fooList = createJavaFunctionVersion("FooListFunction", "FooList", "foo-list.jar", "io.ulbrich.App", Map.of(
                 "BUCKET", someBucket.getBucketName(),
-                "BUCKET_PARAM", someBucketParam.getParameterName()));
-        Function barList = createJavaFunction("BarListFunction", "BarList", "bar-list.jar", "io.ulbrich.App", Map.of(
+                "BUCKET_PARAM", someBucketParam.getParameterName()), false);
+        Version barList = createJavaFunctionVersion("BarListFunction", "BarList", "bar-list.jar", "io.ulbrich.App", Map.of(
                 "BUCKET", someBucket.getBucketName(),
-                "BUCKET_PARAM", someBucketParam.getParameterName()));
+                "BUCKET_PARAM", someBucketParam.getParameterName()), true);
 
         StateMachine stateMachine = StateMachine.Builder.create(this, "MyStateMachine")
                 .stateMachineType(StateMachineType.EXPRESS)
@@ -59,8 +58,8 @@ public class MyTestApi extends Construct {
                 .build();
 
 
-        Function listCoordinator = createJavaFunction("ListCoordinatorFunction", "ListCoordinator", "list-coordinator.jar", "io.ulbrich.App", Map.of(
-                "SM_LIST_ARN", stateMachine.getStateMachineArn()));
+        Version listCoordinator = createJavaFunctionVersion("ListCoordinatorFunction", "ListCoordinator", "list-coordinator.jar", "io.ulbrich.App", Map.of(
+                "SM_LIST_ARN", stateMachine.getStateMachineArn()), true);
         stateMachine.grantStartSyncExecution(listCoordinator);
 
         someBucket.grantReadWrite(fooList);
@@ -112,7 +111,7 @@ public class MyTestApi extends Construct {
         );
     }
 
-    private Function createJavaFunction(String functionId, String directory, String jarName, String handlerMethod, Map<String, String> environment) { // TODO: Builder
+    private Version createJavaFunctionVersion(String functionId, String directory, String jarName, String handlerMethod, Map<String, String> environment, boolean snapStart) { // TODO: Builder
         if (!jarName.endsWith(".jar")) {
             jarName += ".jar";
         }
@@ -135,7 +134,7 @@ public class MyTestApi extends Construct {
                 .user("root")
                 .outputType(ARCHIVED);
 
-        return Function.Builder.create(this, functionId)
+        Function function = Function.Builder.create(this, functionId)
                 .runtime(Runtime.JAVA_11)
                 .code(Code.fromAsset("../software/", AssetOptions.builder()
                         .bundling(bundlingOptions
@@ -148,5 +147,12 @@ public class MyTestApi extends Construct {
                 .timeout(Duration.seconds(10))
                 .logRetention(RetentionDays.ONE_WEEK)
                 .build();
+
+        if (snapStart) {
+            ((CfnFunction) function.getNode().getDefaultChild()).addPropertyOverride("SnapStart", Map.of("ApplyOn", "PublishedVersions"));
+            // Publish a version
+            return Version.Builder.create(this, functionId + "Version").lambda(function).build();
+        }
+        return function.getCurrentVersion();
     }
 }
